@@ -4,15 +4,16 @@ import (
 	"strings"
 	"sync"
 
+	"fmt"
+
 	"github.com/lyft/goruntime/loader"
-	"github.com/lyft/gostats"
+	stats "github.com/lyft/gostats"
 	pb "github.com/lyft/ratelimit/proto/envoy/service/ratelimit/v2"
 	"github.com/lyft/ratelimit/src/assert"
 	"github.com/lyft/ratelimit/src/config"
 	"github.com/lyft/ratelimit/src/redis"
 	logger "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
-	"fmt"
 )
 
 type shouldRateLimitStats struct {
@@ -117,23 +118,27 @@ func (this *service) shouldRateLimitWorker(
 		fmt.Printf("RateLimit: %+v\n", limitsToCheck[i])
 	}
 
-	fmt.Printf("1 LENGTHSSS %d %d \n", len(limitsToCheck), len(request.Descriptors))
+	// fmt.Printf("1 LENGTHSSS %d %d \n", len(limitsToCheck), len(request.Descriptors))
 	responseDescriptorStatuses := this.cache.DoLimit(ctx, request, limitsToCheck)
-	fmt.Printf("2 LENGTHSSS %d %d %d \n", len(responseDescriptorStatuses), len(limitsToCheck), len(request.Descriptors))
+	// fmt.Printf("2 LENGTHSSS %d %d %d \n", len(responseDescriptorStatuses), len(limitsToCheck), len(request.Descriptors))
 	assert.Assert(len(limitsToCheck) == len(responseDescriptorStatuses))
 
 	response := &pb.RateLimitResponse{}
 	response.Statuses = make([]*pb.RateLimitResponse_DescriptorStatus, len(request.Descriptors))
 	finalCode := pb.RateLimitResponse_OK
-	fmt.Printf("LENGTHSSS %d %d %+v\n", len(responseDescriptorStatuses), len(response.Statuses), request)
+	fmt.Printf("REQ %+v\n", request)
 	for i, descriptorStatus := range responseDescriptorStatuses {
 		response.Statuses[i] = descriptorStatus
 		if descriptorStatus.Code == pb.RateLimitResponse_OVER_LIMIT {
+			fmt.Printf("OVER LIMIT %+v \n", responseDescriptorStatuses)
 			finalCode = descriptorStatus.Code
 		}
 	}
 
 	response.OverallCode = finalCode
+
+	fmt.Printf("RES %+v \n", response)
+
 	return response
 }
 
