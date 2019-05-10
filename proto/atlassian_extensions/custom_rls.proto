@@ -53,8 +53,8 @@ message RateLimitResponse {
     }
 
     uint32 requests_per_unit = 1;    
-    uint32 duration = 2;
-    Unit unit = 3;
+    Unit unit = 2;
+    uint32 duration = 3;
     double token_bucket_capacity = 4;
     string alg_type = 5;
   }
