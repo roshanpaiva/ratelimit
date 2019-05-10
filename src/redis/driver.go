@@ -1,5 +1,9 @@
 package redis
 
+import (
+	"github.com/mediocregopher/radix.v2/redis"
+)
+
 // Errors that may be raised during config parsing.
 type RedisError string
 
@@ -29,6 +33,13 @@ type Connection interface {
 	// @return a response object.
 	// Throws a RedisError if there was an error fetching the response.
 	PipeResponse() Response
+
+	// Execute a command immediately.
+	// @param command supplies the command to append.
+	// @param args supplies the additional arguments.
+	// @return a response object.
+	// Throws a RedisError if there was an error fetching the response.
+	PipeExec(command string, args ...interface{}) Response
 }
 
 // Interface for a redis response.
@@ -36,4 +47,6 @@ type Response interface {
 	// @return the response as an integer.
 	// Throws a RedisError if the response is not convertable to an integer.
 	Int() int64
+
+	Array() []*redis.Resp 
 }

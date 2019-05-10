@@ -12,6 +12,7 @@ import (
 	"github.com/lyft/ratelimit/src/redis"
 	logger "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
+	"fmt"
 )
 
 type shouldRateLimitStats struct {
@@ -112,14 +113,19 @@ func (this *service) shouldRateLimitWorker(
 	limitsToCheck := make([]*config.RateLimit, len(request.Descriptors))
 	for i, descriptor := range request.Descriptors {
 		limitsToCheck[i] = snappedConfig.GetLimit(ctx, request.Domain, descriptor)
+
+		fmt.Printf("RateLimit: %+v\n", limitsToCheck[i])
 	}
 
+	fmt.Printf("1 LENGTHSSS %d %d \n", len(limitsToCheck), len(request.Descriptors))
 	responseDescriptorStatuses := this.cache.DoLimit(ctx, request, limitsToCheck)
+	fmt.Printf("2 LENGTHSSS %d %d %d \n", len(responseDescriptorStatuses), len(limitsToCheck), len(request.Descriptors))
 	assert.Assert(len(limitsToCheck) == len(responseDescriptorStatuses))
 
 	response := &pb.RateLimitResponse{}
 	response.Statuses = make([]*pb.RateLimitResponse_DescriptorStatus, len(request.Descriptors))
 	finalCode := pb.RateLimitResponse_OK
+	fmt.Printf("LENGTHSSS %d %d %+v\n", len(responseDescriptorStatuses), len(response.Statuses), request)
 	for i, descriptorStatus := range responseDescriptorStatuses {
 		response.Statuses[i] = descriptorStatus
 		if descriptorStatus.Code == pb.RateLimitResponse_OVER_LIMIT {

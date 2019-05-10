@@ -98,7 +98,7 @@ func TestServiceLegacy(test *testing.T) {
 	}
 
 	limits := []*config.RateLimit{
-		config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_MINUTE, "key", t.statStore),
+		config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_MINUTE, 1, "fixedWindow", "key", t.statStore),
 		nil}
 	legacyLimits, err := convertRatelimits(limits)
 	if err != nil {
@@ -134,7 +134,7 @@ func TestServiceLegacy(test *testing.T) {
 	// Config should still be valid. Also make sure order does not affect results.
 	limits = []*config.RateLimit{
 		nil,
-		config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_MINUTE, "key", t.statStore)}
+		config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_MINUTE, 1, "fixedWindow", "key", t.statStore)}
 	legacyLimits, err = convertRatelimits(limits)
 	if err != nil {
 		t.assert.FailNow(err.Error())
@@ -196,7 +196,7 @@ func TestCacheErrorLegacy(test *testing.T) {
 	if err != nil {
 		t.assert.FailNow(err.Error())
 	}
-	limits := []*config.RateLimit{config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_MINUTE, "key", t.statStore)}
+	limits := []*config.RateLimit{config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_MINUTE, 1, "fixedWindow", "key", t.statStore)}
 	t.config.EXPECT().GetLimit(nil, "different-domain", req.Descriptors[0]).Return(limits[0])
 	t.cache.EXPECT().DoLimit(nil, req, limits).Do(
 		func(context.Context, *pb.RateLimitRequest, []*config.RateLimit) {

@@ -72,7 +72,11 @@ message RateLimit {
   }
 
   uint32 requests_per_unit = 1;
-  Unit unit = 2;
+  uint32 duration = 2;
+  Unit unit = 3;
+  double token_bucket_capacity = 4;
+  string alg_type = 5;
+
 }
 
 // A response from a ShouldRateLimit call.
@@ -90,6 +94,8 @@ message RateLimitResponse {
     RateLimit current_limit = 2;
     // The limit remaining in the current time unit.
     uint32 limit_remaining = 3;
+    // The amount ok tokens remaining in the current time unit.
+    double tokens_remaining = 4;
   }
 
   // The overall response code which takes into account all of the descriptors that were passed

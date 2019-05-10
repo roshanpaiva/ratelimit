@@ -24,6 +24,7 @@
 - [Redis](#redis)
   - [One Redis Instance](#one-redis-instance)
   - [Two Redis Instances](#two-redis-instances)
+- [Proto](#proto)
 - [Contact](#contact)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
@@ -136,6 +137,9 @@ descriptors:
     rate_limit: (optional block)
       unit: <see below: required>
       requests_per_unit: <see below: required>
+      duration: <see below: required>
+      alg_type: <see below: required>
+      token_bucket_capacity: <see below: optional>
     descriptors: (optional block)
       - ... (nested repetition of above)
 ```
@@ -151,11 +155,18 @@ effectively whitelisted. Otherwise, nested descriptors allow more complex matchi
 rate_limit:
   unit: <second, minute, hour, day>
   requests_per_unit: <uint>
+  duration: <uint32>
+  token_bucket_capacity: <float64>
+  alg_type: <string>
 ```
 
 The rate limit block specifies the actual rate limit that will be used when there is a match.
 Currently the service supports per second, minute, hour, and day limits. More types of limits may be added in the
 future based on user demand.
+The service supports three algorithms: fixed window, sliding window, and token bucket. The user may also specify which algorithm they wish to use in the alg_type field. The default is fixed window. 
+The request per unit details the requests allowed per window. For the token bucket algorithm, it functions as the refill rate (number of tokens replenished in the bucket per unit of time).
+The limit can also be customized using the duration. The duration specifies the time length of each limit.
+The token bucket capacity is an optional field specific to the token bucket algorithm. It states the maximum amount of tokens that can be in any bucket.
 
 ### Examples
 
@@ -171,18 +182,22 @@ descriptors:
     rate_limit:
       unit: second
       requests_per_unit: 500
+      duration: 1
+      alg_type: "fixedWindow"
 
   - key: database
     value: default
     rate_limit:
       unit: second
       requests_per_unit: 500
+      duration: 1
+      token_bucket_capacity: 100000
+      alg_type: <see below: "tokenBucket"
 ```
 
 In the configuration above
 the domain is "mongo_cps" and we setup 2 different rate limits in the top level descriptor list. Each of the limits
-have the same key ("database"). They have a different value ("users", and "default"), and each of them setup a 500
-request per second rate limit.
+have the same key ("database"). They have a different value ("users",and "default"), the "users" limit uses the fixed window rate limiter algorithm whereas the second uses the token bucket algorithm. Although, both  setup a 500 request per second rate limit,the token bucket algorithm also requires a token bucket capacity which the maximum number of tokens any limit can have. 
 
 #### Example 2
 
@@ -199,16 +214,20 @@ descriptors:
         rate_limit:
           unit: day
           requests_per_unit: 5
+          duration: 2
+          alg_type: "slidingWindow"
 
   # Only allow 100 messages a day to any unique phone number
   - key: to_number
     rate_limit:
       unit: day
       requests_per_unit: 100
+      duration: 1
+      alg_type: "slidingWindow"
 ```
 
 In the preceding example, the domain is "messaging" and we setup two different scenarios that illustrate more
-complex functionality. First, we want to limit on marketing messages to a specific number. To enable this, we make
+complex functionality. These limits use the sliding window algorithm. First, we want to limit on marketing messages to a specific number. To enable this, we make
 use of *nested descriptor lists.* The top level descriptor is ("message_type", "marketing"). However this descriptor
 does not have a limit assigned so it's just a placeholder. Contained within this entry we have another descriptor list
 that includes an entry with key "to_number". However, notice that no value is provided. This means that the service
@@ -244,7 +263,9 @@ descriptors:
   - key: remote_address
     rate_limit:
       unit: second
-      requests_per_unit: 10
+      requests_per_unit: 1
+      duration: 4
+      alg_type: "slidingWindow"
 
   # Black list IP
   - key: remote_address
@@ -252,12 +273,12 @@ descriptors:
     rate_limit:
       unit: second
       requests_per_unit: 0
+      duration: 1
+      alg_type: "slidingWindow"
 ```
 
 In the preceding example, we setup a generic rate limit for individual IP addresses. The architecture's edge proxy can
-be configured to make a rate limit service call with the descriptor ("remote_address", "50.0.0.1") for example. This IP would
-get 10 requests per second as
-would any other IP. However, the configuration also contains a second configuration that explicitly defines a
+be configured to make a rate limit service call with the descriptor ("remote_address", "50.0.0.1") for example. In this example, we can see that duration has been changed to 4 such that this IP would get 1 requests every 4 seconds. However, the configuration also contains a second configuration that explicitly defines a
 value along with the same key. If the descriptor ("remote_address", "50.0.0.5") is received, the service will
 *attempt the most specific match possible*. This means
 the most specific descriptor at the same level as your request. Thus, key/value is always attempted as a match before just key.
@@ -286,6 +307,8 @@ descriptors:
     rate_limit:
       -  requests_per_unit: 300
          unit: second
+         duration: 1
+         alg_type: "slidingWindow"
 ```
 
 However, it would match the following configuration:
@@ -300,6 +323,8 @@ descriptors:
         rate_limit:
           -  requests_per_unit: 300
              unit: second
+             duration: 1
+             alg_type: "slidingWindow"
 ```
 
 ## Loading Configuration
@@ -404,6 +429,18 @@ To configure two Redis instances use the following environment variables:
 
 This setup will use the Redis server configured with the `_PERSECOND_` vars for
 per second limits, and the other Redis server for all other limits.
+
+# Proto
+Proto (Protocol Buffers) is used by this repo for serializing data.Currently, the protofile that defines the structs used by the rate limiter (RateLimit, RateLimitRequest, RateLimitResponse) is located outside the github repo. We have created a custom_rls.proto protofile located in proto/atlassian_extensions to change the RateLimit struct to add algType (string that selects algorithm type), duration (length of that rate limit), and tokenBucketCapacity (maximum number of tokens in a bucket). The generate_proto file that is used for Make is thus edited to reflect this change. Our custom proto file is thus replacing the original proto outside of the github repo. 
+
+```
+${data_plane_cmd} vendor/github.com/envoyproxy/data-plane-api/envoy/service/ratelimit/v2/rls.proto
+```
+to 
+```
+${data_plane_cmd} proto/atlassian_extensions/custom_rls.proto
+```
+futhurmore, we added proto/atlassian_extensions to the protopath.
 
 # Contact
 

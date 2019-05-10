@@ -87,8 +87,19 @@ func (this *connectionImpl) PipeResponse() Response {
 	return &responseImpl{resp}
 }
 
+func (this *connectionImpl) PipeExec(cmd string, args ...interface{}) Response {
+	resp := this.client.Cmd(cmd, args...)
+	checkError(resp.Err)
+	return &responseImpl{resp}
+}
+
 func (this *responseImpl) Int() int64 {
 	i, err := this.response.Int64()
 	checkError(err)
+	return i
+}
+
+func (this *responseImpl) Array() []*redis.Resp {
+	i, _ := this.response.Array()
 	return i
 }

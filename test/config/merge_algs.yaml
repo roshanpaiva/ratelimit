@@ -9,45 +9,42 @@ descriptors:
       - key: subkey1
         rate_limit:
           unit: second
-          duration: 1
           requests_per_unit: 5
-          alg_type: "fixedWindow"
-
-      # 2nd level key/value with limit. Specific override at 2nd level.
-      - key: subkey1
-        value: subvalue1
-        rate_limit:
-          unit: second
-          duration: 2
-          requests_per_unit: 10
           token_bucket_capacity: 10
-          alg_type: "tokenBucket"
+          alg_type: "fixed_window"
 
       # 2nd level key/value with limit. Specific override at 2nd level.
       - key: subkey1
         value: subvalue2
         rate_limit:
           unit: second
-          duration: 3
           requests_per_unit: 10
-          alg_type: "slidingWindow"
+          token_bucket_capacity: 10
+          alg_type: "token_bucket"
+
+      # 2nd level key/value with limit. Specific override at 2nd level.
+      - key: subkey1
+        value: subvalue3
+        rate_limit:
+          unit: second
+          requests_per_unit: 10
+          token_bucket_capacity: 10
+          alg_type: "sliding_window"
 
   # Top level key only with default rate limit.
   - key: key2
     rate_limit:
       unit: minute
-      duration: 1
       requests_per_unit: 20
-      alg_type: "fixedWindow"
+      alg_type: "sliding_window"
 
   # Top level key/value with limit. Specific override at 1st level.
   - key: key2
     value: value2
     rate_limit:
       unit: minute
-      duration: 1
       requests_per_unit: 30
-      alg_type: "fixedWindow"
+      alg_type: "fixed_window"
 
   # First level override with no limit. This effectively whitelists the value.
   - key: key2
@@ -56,31 +53,27 @@ descriptors:
   - key: key3
     rate_limit:
       unit: hour
-      duration: 3
       requests_per_unit: 1
       token_bucket_capacity: 10
-      alg_type: "tokenBucket"
+      alg_type: "token_bucket"
 
   - key: key4
     rate_limit:
       unit: day
-      duration: 1
       requests_per_unit: 1
       token_bucket_capacity: 10
-      alg_type: "tokenBucket"
+      alg_type: "token_bucket"
 
   - key: key5
     value: value5
     rate_limit:
       unit: day
-      duration: 1
       requests_per_unit: 15
-      alg_type: "slidingWindow"
+      alg_type: "sliding_window"
     descriptors:
       - key: subkey5
         value: subvalue5
         rate_limit:
           unit: day
-          duration: 2
           requests_per_unit: 25
-          alg_type: "fixedWindow"
+          alg_type: "fixed_window"

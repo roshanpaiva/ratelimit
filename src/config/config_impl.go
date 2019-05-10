@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lyft/gostats"
+	stats "github.com/lyft/gostats"
 	pb_struct "github.com/lyft/ratelimit/proto/envoy/api/v2/ratelimit"
 	pb "github.com/lyft/ratelimit/proto/envoy/service/ratelimit/v2"
 	logger "github.com/sirupsen/logrus"
@@ -14,7 +14,11 @@ import (
 
 type yamlRateLimit struct {
 	RequestsPerUnit uint32 `yaml:"requests_per_unit"`
-	Unit            string
+	Unit            string `yaml:"unit"`
+	Duration		uint32 `yaml:"duration"`
+	TokenBucketCapacity        float64 `yaml:"token_bucket_capacity"`
+	AlgType string `yaml:"alg_type"`
+
 }
 
 type yamlDescriptor struct {
@@ -50,6 +54,9 @@ var validKeys = map[string]bool{
 	"rate_limit":        true,
 	"unit":              true,
 	"requests_per_unit": true,
+	"token_bucket_capacity" : true,
+	"alg_type": true,
+	"duration": true,
 }
 
 // Create new rate limit stats for a config entry.
@@ -64,6 +71,9 @@ func newRateLimitStats(statsScope stats.Scope, key string) RateLimitStats {
 	return ret
 }
 
+
+
+
 // Create a new rate limit config entry.
 // @param requestsPerUnit supplies the requests per unit of time for the entry.
 // @param unit supplies the unit of time for the entry.
@@ -71,9 +81,21 @@ func newRateLimitStats(statsScope stats.Scope, key string) RateLimitStats {
 // @param scope supplies the owning scope.
 // @return the new config entry.
 func NewRateLimit(
-	requestsPerUnit uint32, unit pb.RateLimitResponse_RateLimit_Unit, key string, scope stats.Scope) *RateLimit {
+	requestsPerUnit uint32, unit pb.RateLimitResponse_RateLimit_Unit, duration uint32, algorithm string, key string, scope stats.Scope, add_args ...interface{}) *RateLimit {
+	
+		capacity := float64(0)
+		for _, arg := range add_args {
+		    switch t := arg.(type) {
+		    case float64:
+		        capacity = t
+			case int:
+		        capacity = float64(t)
+		    default:
+		        panic("Unknown argument")
+		    }
+		}
 
-	return &RateLimit{FullKey: key, Stats: newRateLimitStats(scope, key), Limit: &pb.RateLimitResponse_RateLimit{RequestsPerUnit: requestsPerUnit, Unit: unit}}
+	return &RateLimit{FullKey: key, Stats: newRateLimitStats(scope, key), Limit: &pb.RateLimitResponse_RateLimit{AlgType: algorithm, TokenBucketCapacity: capacity, RequestsPerUnit: requestsPerUnit, Unit: unit, Duration: duration}}
 }
 
 // Dump an individual descriptor for debugging purposes.
@@ -105,8 +127,12 @@ func newRateLimitConfigError(config RateLimitConfigToLoad, err string) RateLimit
 func (this *rateLimitDescriptor) loadDescriptors(
 	config RateLimitConfigToLoad, parentKey string, descriptors []yamlDescriptor,
 	statsScope stats.Scope) {
+	fmt.Println("CALLING LOAD DESCRIPTORS")
+
 
 	for _, descriptorConfig := range descriptors {
+		fmt.Printf("%+v\n", descriptorConfig.RateLimit)
+
 		if descriptorConfig.Key == "" {
 			panic(newRateLimitConfigError(config, "descriptor has empty key"))
 		}
@@ -135,8 +161,11 @@ func (this *rateLimitDescriptor) loadDescriptors(
 			}
 
 			rateLimit = NewRateLimit(
-				descriptorConfig.RateLimit.RequestsPerUnit, pb.RateLimitResponse_RateLimit_Unit(value), newParentKey,
-				statsScope)
+				//hardcoded 10??
+				descriptorConfig.RateLimit.RequestsPerUnit, pb.RateLimitResponse_RateLimit_Unit(value), descriptorConfig.RateLimit.Duration, descriptorConfig.RateLimit.AlgType, newParentKey,
+				statsScope, descriptorConfig.RateLimit.TokenBucketCapacity)
+			fmt.Println("PRINTING CREATED RATE LIMIT")
+			fmt.Printf("%v\n", rateLimit)
 			rateLimitDebugString = fmt.Sprintf(
 				" ratelimit={requests_per_unit=%d, unit=%s}", rateLimit.Limit.RequestsPerUnit,
 				rateLimit.Limit.Unit.String())
@@ -209,7 +238,16 @@ func (this *rateLimitConfigImpl) loadConfig(config RateLimitConfigToLoad, statsS
 	validateYamlKeys(config, any)
 
 	var root yamlRoot
+	// fmt.Println("UNMARSHALLING")
+	// fmt.Println(config.FileBytes)
+
 	err = yaml.Unmarshal([]byte(config.FileBytes), &root)
+	// fmt.Println("PRINTING ROOT")
+	// fmt.Println( root.Descriptors[0])
+
+	// fmt.Printf("%+v\n", root.Descriptors[0].Descriptors[0].RateLimit)
+
+
 	if err != nil {
 		errorText := fmt.Sprintf("error loading config file: %s", err.Error())
 		logger.Debugf(errorText)
@@ -280,7 +318,6 @@ func (this *rateLimitConfigImpl) GetLimit(
 			break
 		}
 	}
-
 	return rateLimit
 }
 
@@ -292,6 +329,7 @@ func NewRateLimitConfigImpl(
 	configs []RateLimitConfigToLoad, statsScope stats.Scope) RateLimitConfig {
 
 	ret := &rateLimitConfigImpl{map[string]*rateLimitDomain{}}
+
 	for _, config := range configs {
 		ret.loadConfig(config, statsScope)
 	}

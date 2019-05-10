@@ -35,4 +35,5 @@ type RateLimitCache interface {
 		ctx context.Context,
 		request *pb.RateLimitRequest,
 		limits []*config.RateLimit) []*pb.RateLimitResponse_DescriptorStatus
+
 }

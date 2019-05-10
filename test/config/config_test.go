@@ -3,7 +3,7 @@ package config_test
 import (
 	"io/ioutil"
 	"testing"
-
+	"fmt"
 	"github.com/lyft/gostats"
 	pb_struct "github.com/lyft/ratelimit/proto/envoy/api/v2/ratelimit"
 	pb "github.com/lyft/ratelimit/proto/envoy/service/ratelimit/v2"
@@ -22,6 +22,8 @@ func loadFile(path string) []config.RateLimitConfigToLoad {
 func TestBasicConfig(t *testing.T) {
 	assert := assert.New(t)
 	stats := stats.NewStore(stats.NewNullSink(), false)
+	fmt.Println("LOADING YAML FILE")
+
 	rlConfig := config.NewRateLimitConfigImpl(loadFile("basic_config.yaml"), stats)
 	rlConfig.Dump()
 	assert.Nil(rlConfig.GetLimit(nil, "foo_domain", &pb_struct.RateLimitDescriptor{}))
@@ -30,7 +32,7 @@ func TestBasicConfig(t *testing.T) {
 	rl := rlConfig.GetLimit(
 		nil, "test-domain",
 		&pb_struct.RateLimitDescriptor{
-			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key1", Value: "something"}},
+			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key", Value: "something"}},
 		})
 	assert.Nil(rl)
 
@@ -55,20 +57,31 @@ func TestBasicConfig(t *testing.T) {
 		})
 	assert.Nil(rl)
 
+	//Test 1: KEY1 VALUE1 SUBKEY1- checks rateLimit of key1_value1_subkey1 descriptor
+
 	rl = rlConfig.GetLimit(
 		nil, "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key1", Value: "value1"}, {Key: "subkey1", Value: "something"}},
 		})
+	//Increments the stats for r1
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.OverLimit.Inc()
 	rl.Stats.NearLimit.Inc()
+
+	//Checks RequestsPerUnit, Unit, and AlgyType Values are in accordance with basic_config.yaml
 	assert.EqualValues(5, rl.Limit.RequestsPerUnit)
 	assert.Equal(pb.RateLimitResponse_RateLimit_SECOND, rl.Limit.Unit)
+	assert.EqualValues("fixedWindow", rl.Limit.AlgType)
+	assert.EqualValues(1, rl.Limit.Duration)
+	//Checks statstics were properly incremented
 	assert.EqualValues(1, stats.NewCounter("test-domain.key1_value1.subkey1.total_hits").Value())
 	assert.EqualValues(1, stats.NewCounter("test-domain.key1_value1.subkey1.over_limit").Value())
 	assert.EqualValues(1, stats.NewCounter("test-domain.key1_value1.subkey1.near_limit").Value())
 
+	//The following test the rest of the key-value descriptors in the basic_config.yaml
+
+	//Test 2: KEY1 VALUE1 SUBKEY1 SUBVALUE1
 	rl = rlConfig.GetLimit(
 		nil, "test-domain",
 		&pb_struct.RateLimitDescriptor{
@@ -79,6 +92,9 @@ func TestBasicConfig(t *testing.T) {
 	rl.Stats.NearLimit.Inc()
 	assert.EqualValues(10, rl.Limit.RequestsPerUnit)
 	assert.Equal(pb.RateLimitResponse_RateLimit_SECOND, rl.Limit.Unit)
+	assert.EqualValues(10, rl.Limit.TokenBucketCapacity)
+	assert.EqualValues("tokenBucket", rl.Limit.AlgType)
+	assert.EqualValues(2, rl.Limit.Duration)
 	assert.EqualValues(
 		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.total_hits").Value())
 	assert.EqualValues(
@@ -86,6 +102,27 @@ func TestBasicConfig(t *testing.T) {
 	assert.EqualValues(
 		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.near_limit").Value())
 
+	//Test 3: KEY1 VALUE1 SUBKEY2
+	rl = rlConfig.GetLimit(
+		nil, "test-domain",
+		&pb_struct.RateLimitDescriptor{
+			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key1", Value: "value1"}, {Key: "subkey1", Value: "subvalue2"}},
+		})
+	rl.Stats.TotalHits.Inc()
+	rl.Stats.OverLimit.Inc()
+	rl.Stats.NearLimit.Inc()
+	assert.EqualValues(10, rl.Limit.RequestsPerUnit)
+	assert.Equal(pb.RateLimitResponse_RateLimit_SECOND, rl.Limit.Unit)
+	assert.EqualValues("slidingWindow", rl.Limit.AlgType)
+	assert.EqualValues(3, rl.Limit.Duration)
+	assert.EqualValues(
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.total_hits").Value())
+	assert.EqualValues(
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.over_limit").Value())
+	assert.EqualValues(
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.near_limit").Value())
+
+	//Test 4: KEY2
 	rl = rlConfig.GetLimit(
 		nil, "test-domain",
 		&pb_struct.RateLimitDescriptor{
@@ -96,10 +133,13 @@ func TestBasicConfig(t *testing.T) {
 	rl.Stats.NearLimit.Inc()
 	assert.EqualValues(20, rl.Limit.RequestsPerUnit)
 	assert.Equal(pb.RateLimitResponse_RateLimit_MINUTE, rl.Limit.Unit)
+	assert.EqualValues("fixedWindow", rl.Limit.AlgType)
+	assert.EqualValues(1, rl.Limit.Duration)
 	assert.EqualValues(1, stats.NewCounter("test-domain.key2.total_hits").Value())
 	assert.EqualValues(1, stats.NewCounter("test-domain.key2.over_limit").Value())
 	assert.EqualValues(1, stats.NewCounter("test-domain.key2.near_limit").Value())
 
+	//Test 5: KEY2 VALUE2
 	rl = rlConfig.GetLimit(
 		nil, "test-domain",
 		&pb_struct.RateLimitDescriptor{
@@ -110,10 +150,13 @@ func TestBasicConfig(t *testing.T) {
 	rl.Stats.NearLimit.Inc()
 	assert.EqualValues(30, rl.Limit.RequestsPerUnit)
 	assert.Equal(pb.RateLimitResponse_RateLimit_MINUTE, rl.Limit.Unit)
+	assert.EqualValues("fixedWindow", rl.Limit.AlgType)
+	assert.EqualValues(1, rl.Limit.Duration)
 	assert.EqualValues(1, stats.NewCounter("test-domain.key2_value2.total_hits").Value())
 	assert.EqualValues(1, stats.NewCounter("test-domain.key2_value2.over_limit").Value())
 	assert.EqualValues(1, stats.NewCounter("test-domain.key2_value2.near_limit").Value())
 
+	//Test 6: KEY2 VALUE2 VALUE3
 	rl = rlConfig.GetLimit(
 		nil, "test-domain",
 		&pb_struct.RateLimitDescriptor{
@@ -121,6 +164,7 @@ func TestBasicConfig(t *testing.T) {
 		})
 	assert.Nil(rl)
 
+	//Test 7: KEY3
 	rl = rlConfig.GetLimit(
 		nil, "test-domain",
 		&pb_struct.RateLimitDescriptor{
@@ -131,10 +175,14 @@ func TestBasicConfig(t *testing.T) {
 	rl.Stats.NearLimit.Inc()
 	assert.EqualValues(1, rl.Limit.RequestsPerUnit)
 	assert.Equal(pb.RateLimitResponse_RateLimit_HOUR, rl.Limit.Unit)
+	assert.EqualValues(10, rl.Limit.TokenBucketCapacity)
+	assert.EqualValues("tokenBucket", rl.Limit.AlgType)
+	assert.EqualValues(3, rl.Limit.Duration)
 	assert.EqualValues(1, stats.NewCounter("test-domain.key3.total_hits").Value())
 	assert.EqualValues(1, stats.NewCounter("test-domain.key3.over_limit").Value())
 	assert.EqualValues(1, stats.NewCounter("test-domain.key3.near_limit").Value())
 
+	//Test 8: KEY4
 	rl = rlConfig.GetLimit(
 		nil, "test-domain",
 		&pb_struct.RateLimitDescriptor{
@@ -145,9 +193,49 @@ func TestBasicConfig(t *testing.T) {
 	rl.Stats.NearLimit.Inc()
 	assert.EqualValues(1, rl.Limit.RequestsPerUnit)
 	assert.Equal(pb.RateLimitResponse_RateLimit_DAY, rl.Limit.Unit)
+	assert.EqualValues(10, rl.Limit.TokenBucketCapacity)
+	assert.EqualValues("tokenBucket", rl.Limit.AlgType)
+	assert.EqualValues(1, rl.Limit.Duration)
 	assert.EqualValues(1, stats.NewCounter("test-domain.key4.total_hits").Value())
 	assert.EqualValues(1, stats.NewCounter("test-domain.key4.over_limit").Value())
 	assert.EqualValues(1, stats.NewCounter("test-domain.key4.near_limit").Value())
+
+	//Test 9: KEY5 VALUE5
+	rl = rlConfig.GetLimit(
+		nil, "test-domain",
+		&pb_struct.RateLimitDescriptor{
+			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key5", Value: "value5"}},
+		})
+	rl.Stats.TotalHits.Inc()
+	rl.Stats.OverLimit.Inc()
+	rl.Stats.NearLimit.Inc()
+	assert.EqualValues(15, rl.Limit.RequestsPerUnit)
+	assert.Equal(pb.RateLimitResponse_RateLimit_DAY, rl.Limit.Unit)
+	assert.EqualValues("slidingWindow", rl.Limit.AlgType)
+	assert.EqualValues(1, rl.Limit.Duration)
+	assert.EqualValues(1, stats.NewCounter("test-domain.key4.total_hits").Value())
+	assert.EqualValues(1, stats.NewCounter("test-domain.key4.over_limit").Value())
+	assert.EqualValues(1, stats.NewCounter("test-domain.key4.near_limit").Value())
+
+	//Test 10: KEY5 VALUE5 SUBKEY5 SUBVALUE5
+	rl = rlConfig.GetLimit(
+		nil, "test-domain",
+		&pb_struct.RateLimitDescriptor{
+			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key5", Value: "value5"}, {Key: "subkey5", Value: "subvalue5"}},
+		})
+	rl.Stats.TotalHits.Inc()
+	rl.Stats.OverLimit.Inc()
+	rl.Stats.NearLimit.Inc()
+	assert.EqualValues(25, rl.Limit.RequestsPerUnit)
+	assert.Equal(pb.RateLimitResponse_RateLimit_DAY, rl.Limit.Unit)
+	assert.EqualValues("fixedWindow", rl.Limit.AlgType)
+	assert.EqualValues(2, rl.Limit.Duration)
+	assert.EqualValues(1, stats.NewCounter("test-domain.key4.total_hits").Value())
+	assert.EqualValues(1, stats.NewCounter("test-domain.key4.over_limit").Value())
+	assert.EqualValues(1, stats.NewCounter("test-domain.key4.near_limit").Value())
+
+
+
 }
 
 func expectConfigPanic(t *testing.T, call func(), expectedError string) {
